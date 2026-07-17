@@ -1,0 +1,79 @@
+/*---------------------------------------------------------*\
+| main_FreeBSD_Linux_MacOS.cpp                              |
+|                                                           |
+|   Entry point for the OpenRGB application                 |
+|                                                           |
+|   This file is part of the OpenRGB project                |
+|   SPDX-License-Identifier: GPL-2.0-or-later               |
+\*---------------------------------------------------------*/
+
+#include "cli.h"
+#include "ResourceManager.h"
+#include "NetworkServer.h"
+#include "LogManager.h"
+#include "startup.h"
+#include "AppInfo.h"
+
+#ifdef _MACOSX_X86_X64
+#include "macUSPCIOAccess.h"
+io_connect_t macUSPCIO_driver_connection;
+#endif
+
+#if defined(__APPLE__) && !defined(RGBSERVER_HEADLESS)
+#include "macutils.h"
+#endif
+
+using namespace std::chrono_literals;
+
+/*---------------------------------------------------------*\
+| main                                                      |
+|                                                           |
+|   Entry point, calls the startup processing               |
+\*---------------------------------------------------------*/
+int main(int argc, char* argv[])
+{
+    /*-----------------------------------------------------*\
+    | Mac x86/x64 only - Install SMBus Driver macUSPCIO     |
+    \*-----------------------------------------------------*/
+#ifdef _MACOSX_X86_X64
+    InitMacUSPCIODriver();
+#endif
+
+    /*-----------------------------------------------------*\
+    | Perform CLI pre-detection processing to get return    |
+    | flags                                                 |
+    \*-----------------------------------------------------*/
+    unsigned int ret_flags = cli_pre_detection(argc, argv);
+
+    /*-----------------------------------------------------*\
+    | Initialize ResourceManager                            |
+    \*-----------------------------------------------------*/
+    ResourceManager::get()->Initialize(
+        !(ret_flags & RET_FLAG_NO_AUTO_CONNECT),
+        !(ret_flags & RET_FLAG_NO_DETECT),
+        ret_flags & RET_FLAG_START_SERVER,
+        ret_flags & RET_FLAG_CLI_POST_DETECTION);
+
+    /*-----------------------------------------------------*\
+    | Perform application startup and run the application.  |
+    | This call returns only when the GUI application is    |
+    | closing or if not running the GUI.                    |
+    \*-----------------------------------------------------*/
+    int exitval = startup(argc, argv, ret_flags);
+
+    /*-----------------------------------------------------*\
+    | Perform ResourceManager cleanup before exiting        |
+    \*-----------------------------------------------------*/
+    ResourceManager::get()->Cleanup();
+
+    LOG_TRACE("%s finishing with exit code %d", APP_NAME, exitval);
+
+    /*-----------------------------------------------------*\
+    | Mac x86/x64 only - Uninstall SMBus Driver macUSPCIO   |
+    \*-----------------------------------------------------*/
+#ifdef _MACOSX_X86_X64
+    CloseMacUSPCIODriver();
+#endif
+
+    return exitval;
+}
